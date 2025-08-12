@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 
 # Optional OpenAI client (works if OPENAI_API_KEY is set)
@@ -32,10 +33,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve static files from workspace so /prototype-3col.html can be opened at http://localhost:8000/prototype-3col.html
+# Static files under /static to avoid shadowing /api
 STATIC_DIR = "/workspace"
 if os.path.isdir(STATIC_DIR):
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    app.mount("/static", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+
+
+@app.get("/")
+async def root_redirect():
+    return RedirectResponse(url="/prototype-3col.html")
+
+
+@app.get("/prototype-3col.html")
+async def serve_prototype():
+    path = os.path.join(STATIC_DIR, "prototype-3col.html")
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="prototype not found")
+    return FileResponse(path)
 
 
 class ChatMessage(BaseModel):
