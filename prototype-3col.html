@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>三栏横屏原型 · 世界-对话-插话</title>
+  <style>
+    :root {
+      --left-bg: rgba(40, 70, 90, 0.25);    /* 冷色 */
+      --mid-bg: #1f1f23;                    /* 中性深灰 */
+      --right-bg: rgba(160, 90, 20, 0.18);  /* 暖色 */
+      --card-bg: rgba(255,255,255,0.06);
+      --text-primary: #eee;
+      --text-secondary: #bfc7d5;
+      --accent-warm: #ffb54a;
+      --accent-cool: #6ec1c1;
+      --danger: #ff5566;
+      --ok: #4dc276;
+      --shadow: 0 6px 16px rgba(0,0,0,0.25);
+      --radius: 12px;
+      --fast: 0.2s;
+      --normal: 0.4s;
+      --branch: 0.5s;
+    }
+
+    html, body {
+      height: 100%;
+      background: #0f1115;
+      color: var(--text-primary);
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    /* 竖屏不支持提示 */
+    #rotate-overlay {
+      position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.8); z-index: 1000; font-size: 20px; text-align: center; padding: 24px;
+    }
+
+    /* 容器与三栏布局 */
+    .app {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr; /* 25-50-25 */
+      gap: 12px;
+      height: 100%;
+      padding: 12px 16px;
+      box-sizing: border-box;
+    }
+
+    .panel {
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: flex; flex-direction: column;
+      min-height: 0; /* 允许内部滚动 */
+    }
+
+    /* 左栏 */
+    #world-panel { background: linear-gradient(180deg, var(--left-bg), transparent 65%), radial-gradient(1200px 600px at 0% 0%, rgba(80,120,140,0.25), transparent 60%); }
+    #world-events { padding: 12px; overflow: auto; }
+    .event-card {
+      background: var(--card-bg);
+      border: 1px solid rgba(160,200,220,0.18);
+      border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+      animation: slideIn var(--normal) ease;
+    }
+    .event-card.new { box-shadow: 0 0 0 2px rgba(160,200,220,0.45) inset; animation: flash var(--fast) ease-in; }
+    .event-time { font-size: 12px; color: var(--text-secondary); }
+    .event-title { font-weight: 700; margin: 6px 0 4px; }
+    .event-desc { font-size: 14px; color: #d9e2ef; opacity: 0.9; }
+
+    /* 中栏 */
+    #chat-panel { background: var(--mid-bg); position: relative; }
+    #chat-stream { padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+    .msg { max-width: 76%; padding: 10px 12px; background: #2a2d33; border-radius: 12px; line-height: 1.4; }
+    .msg.npc { align-self: flex-start; border-bottom-left-radius: 4px; }
+    .msg.player { align-self: flex-end; background: #3b3f47; border-bottom-right-radius: 4px; }
+    .msg.branch { outline: 2px dashed rgba(255,181,74,0.5); animation: branch var(--branch) ease; }
+
+    #composer { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; padding: 10px; background: rgba(255,255,255,0.03); border-top: 1px solid rgba(255,255,255,0.06); }
+    #input-text { background: #24272e; color: var(--text-primary); border: 1px solid #3a3f48; border-radius: 8px; padding: 10px; }
+    #btn-send, #btn-voice-mini {
+      background: #3a3f48; color: #fff; border: 0; border-radius: 8px; padding: 10px 12px; cursor: pointer;
+    }
+
+    #btn-eagle, #btn-mosquito {
+      position: absolute; bottom: 72px; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer;
+      display: grid; place-items: center; box-shadow: var(--shadow);
+    }
+    #btn-eagle { left: 12px; background: radial-gradient(circle at 30% 30%, #6ec1c1, #244b50); }
+    #btn-mosquito { right: 12px; background: radial-gradient(circle at 70% 30%, #ffb54a, #7a3f18); }
+
+    #chat-pause-overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); z-index: 5; }
+    #chat-pause-overlay .wave { width: 72px; height: 16px; background: repeating-linear-gradient(90deg, #fff 0 12px, transparent 12px 16px); opacity: 0.75; animation: pulse 1s infinite ease-in-out; border-radius: 8px; }
+
+    /* 右栏 */
+    #interject-panel { background: linear-gradient(180deg, var(--right-bg), transparent 65%); }
+    #interject-scroll { padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+    .interject-suggest { text-align: left; background: #3c2f24; color: #ffd59a; border: 1px solid #8a5a2d; border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+    .interject-suggest:hover { filter: brightness(1.05); }
+
+    #voice-area { margin-top: auto; padding: 12px; border-top: 1px solid rgba(255,255,255,0.06); }
+    #btn-voice { width: 100%; padding: 14px 12px; border-radius: 12px; border: 2px dashed #cc8844; background: rgba(255,181,74,0.15); color: #ffd59a; cursor: pointer; }
+    #btn-voice.recording { border-style: solid; background: rgba(255,85,102,0.15); border-color: var(--danger); }
+    #hint { color: #ffd59a; opacity: 0.8; font-size: 12px; margin-top: 6px; }
+
+    /* 抽屉触发（手机横屏时显示） */
+    .drawer-toggle { display: none; position: fixed; top: 12px; width: 40px; height: 40px; border-radius: 20px; border: 0; cursor: pointer; z-index: 20; box-shadow: var(--shadow); }
+    #toggle-left { left: 12px; background: #25404a; color: #9fd7d7; }
+    #toggle-right { right: 12px; background: #6b3a1a; color: #ffd59a; }
+
+    .drawer { position: fixed; top: 0; bottom: 0; width: min(86vw, 360px); background: #111; box-shadow: var(--shadow); transform: translateX(-110%); transition: transform var(--normal); z-index: 15; display: flex; flex-direction: column; }
+    .drawer.right { right: 0; left: auto; transform: translateX(110%); }
+    .drawer.open.left { transform: translateX(0); }
+    .drawer.open.right { transform: translateX(0); }
+
+    /* 动画 */
+    @keyframes slideIn { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes flash { 0% { box-shadow: 0 0 0 0 rgba(160,200,220,0.8) inset; } 100% { box-shadow: 0 0 0 2px rgba(160,200,220,0.45) inset; } }
+    @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+    @keyframes branch { 0% { transform: scale(1.0); } 35% { transform: scale(1.03); } 100% { transform: scale(1.0); } }
+
+    /* 断点与适配 */
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      #world-panel, #interject-panel { display: none; }
+      #toggle-left, #toggle-right { display: block; }
+      .drawer { display: flex; }
+    }
+
+    /* 字体放大（平板近似） */
+    @media (min-width: 900px) and (max-width: 1200px) {
+      body { font-size: 17px; }
+    }
+
+    /* 轻边距（大屏） */
+    @media (min-width: 1400px) {
+      .app { padding: 16px 32px; gap: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="rotate-overlay">本原型不支持竖屏，请旋转设备至横屏以继续体验。</div>
+
+  <!-- 手机横屏抽屉开关 -->
+  <button id="toggle-left" class="drawer-toggle" aria-label="打开世界事件">☰</button>
+  <button id="toggle-right" class="drawer-toggle" aria-label="打开插话区">✦</button>
+
+  <!-- 抽屉（与左/右栏内容复用结构） -->
+  <aside id="drawer-left" class="drawer left" aria-hidden="true">
+    <header style="padding:12px 12px 0; color:#9fd7d7">世界关键事件</header>
+    <div id="drawer-world" style="padding:12px; overflow:auto"></div>
+  </aside>
+  <aside id="drawer-right" class="drawer right" aria-hidden="true">
+    <header style="padding:12px 12px 0; color:#ffd59a">插话建议 & 语音</header>
+    <div id="drawer-interject" style="padding:12px; overflow:auto"></div>
+  </aside>
+
+  <main class="app" role="application">
+    <!-- 左栏：世界关键事件 -->
+    <section id="world-panel" class="panel" aria-label="世界关键事件">
+      <div id="world-events"></div>
+    </section>
+
+    <!-- 中栏：玩家对话主场 -->
+    <section id="chat-panel" class="panel" aria-label="玩家对话">
+      <div id="chat-pause-overlay"><div class="wave" title="语音处理中…"></div></div>
+      <div id="chat-stream"></div>
+      <div id="composer">
+        <input id="input-text" placeholder="输入以跟随命运…（或右侧选择插话）" />
+        <button id="btn-voice-mini" title="短按录音">语音</button>
+        <button id="btn-send">发送</button>
+      </div>
+      <button id="btn-eagle" title="俯瞰世界局势" aria-label="老鹰">🦅</button>
+      <button id="btn-mosquito" title="微小扰动·进化" aria-label="蚊子">🦟</button>
+    </section>
+
+    <!-- 右栏：插话区 -->
+    <aside id="interject-panel" class="panel" aria-label="插话区">
+      <div id="interject-scroll"></div>
+      <div id="voice-area">
+        <button id="btn-voice">长按说话以暂停群聊</button>
+        <div id="hint">提示：长按期间中栏会暂停，识别结束后对世界产生细微变化</div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    // 竖屏遮罩
+    function updateOrientationOverlay() {
+      const overlay = document.getElementById('rotate-overlay');
+      const isPortrait = window.matchMedia('(orientation: portrait)').matches;
+      overlay.style.display = isPortrait ? 'flex' : 'none';
+    }
+    window.addEventListener('resize', updateOrientationOverlay);
+    updateOrientationOverlay();
+
+    // 初始化示例数据
+    const worldEventsRoot = document.getElementById('world-events');
+    const chatStream = document.getElementById('chat-stream');
+    const interjectRoot = document.getElementById('interject-scroll');
+
+    const sampleEvents = [
+      { t: '第 1 日·晨', title: '风暴远处酝酿', desc: '渔民报告外海气压异常，海鸟聚集成群。' },
+      { t: '第 1 日·午', title: '边境烽烟', desc: '巡逻队发现未知旗帜的斥候，疑似试探。' },
+      { t: '第 1 日·昏', title: '市集中诡异低鸣', desc: '有人声称听见持续的嗡嗡声。' },
+    ];
+
+    const aiSuggestionsBase = [
+      '也许我们低估了天空的影子…',
+      '等等，先别说话，听——你听见了吗？',
+      '向东转移队伍，躲开风暴眼。',
+      '把消息压下去，免得引起恐慌。',
+    ];
+
+    function renderEvents(target) {
+      target.innerHTML = '';
+      for (const ev of sampleEvents) {
+        const card = document.createElement('div');
+        card.className = 'event-card';
+        card.innerHTML = `
+          <div class="event-time">${ev.t}</div>
+          <div class="event-title">${ev.title}</div>
+          <div class="event-desc">${ev.desc}</div>
+        `;
+        target.appendChild(card);
+      }
+    }
+
+    function pushChat(text, role = 'npc', isBranch = false) {
+      const m = document.createElement('div');
+      m.className = `msg ${role}` + (isBranch ? ' branch' : '');
+      m.textContent = text;
+      chatStream.appendChild(m);
+      chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    function renderAISuggestions(target) {
+      target.innerHTML = '';
+      aiSuggestionsBase.forEach((line) => {
+        const b = document.createElement('button');
+        b.className = 'interject-suggest';
+        b.textContent = line;
+        b.addEventListener('click', () => {
+          // 插话成功 → 中栏短分支动画，然后回到主线
+          pushChat(line, 'player', true);
+          setTimeout(() => {
+            pushChat('……命运的齿轮继续转动。', 'npc', false);
+          }, 650);
+        });
+        target.appendChild(b);
+      });
+    }
+
+    renderEvents(worldEventsRoot);
+    renderAISuggestions(interjectRoot);
+
+    // 同步到抽屉（移动横屏）
+    const drawerWorld = document.getElementById('drawer-world');
+    const drawerInterject = document.getElementById('drawer-interject');
+    function syncDrawers() {
+      drawerWorld.innerHTML = worldEventsRoot.innerHTML;
+      drawerInterject.innerHTML = interjectRoot.innerHTML + document.getElementById('voice-area').outerHTML;
+    }
+    syncDrawers();
+
+    // 初始对话
+    pushChat('【系统】世界尽收眼底。');
+    pushChat('你迟到了。风暴不会等人。', 'npc');
+
+    // 发送文本
+    const input = document.getElementById('input-text');
+    document.getElementById('btn-send').addEventListener('click', () => {
+      const v = input.value.trim();
+      if (!v) return;
+      pushChat(v, 'player');
+      input.value = '';
+    });
+
+    // 语音（右下按钮·长按）
+    const btnVoice = document.getElementById('btn-voice');
+    const pauseOverlay = document.getElementById('chat-pause-overlay');
+    let pressTimer = null;
+    function startRecording() {
+      btnVoice.classList.add('recording');
+      pauseOverlay.style.display = 'flex';
+    }
+    function stopRecording() {
+      btnVoice.classList.remove('recording');
+      pauseOverlay.style.display = 'none';
+      // 语音识别占位 → 影响世界微小变化
+      pushChat('（你的低语在风中扩散……）', 'player', true);
+      // 为模拟：向左栏追加“新事件”并闪烁
+      const ev = { t: '第 1 日·夜', title: '诡响回荡', desc: '据说嗡鸣汇成回声墙，短暂停滞了争吵。' };
+      sampleEvents.unshift(ev);
+      const card = document.createElement('div');
+      card.className = 'event-card new';
+      card.innerHTML = `<div class="event-time">${ev.t}</div><div class="event-title">${ev.title}</div><div class="event-desc">${ev.desc}</div>`;
+      worldEventsRoot.prepend(card);
+      syncDrawers();
+    }
+    btnVoice.addEventListener('mousedown', startRecording);
+    btnVoice.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+    ['mouseup','mouseleave','touchend','touchcancel'].forEach(evt => btnVoice.addEventListener(evt, stopRecording));
+
+    // 中栏小语音按钮（短按示例）
+    document.getElementById('btn-voice-mini').addEventListener('click', () => {
+      pushChat('（短语音）先暂停一下。', 'player', true);
+    });
+
+    // 老鹰按钮（宏观视角占位）
+    document.getElementById('btn-eagle').addEventListener('click', () => {
+      alert('老鹰：俯瞰世界局势\n\n势力范围：北境↑，边境紧张度：中→高\n（偏移累计后，将出现血色瞳孔闪烁警告）');
+    });
+
+    // 蚊子按钮（进化面板占位）
+    document.getElementById('btn-mosquito').addEventListener('click', () => {
+      alert('蚊子进化：\n- 毒性 / 速度 / 隐匿 / 群聚\n进化将增强右栏插话影响力，并改变回收至主线的难度。');
+    });
+
+    // 手机横屏：抽屉开关
+    const drawerLeft = document.getElementById('drawer-left');
+    const drawerRight = document.getElementById('drawer-right');
+    document.getElementById('toggle-left').addEventListener('click', () => {
+      drawerLeft.classList.toggle('open'); drawerLeft.classList.toggle('left');
+      drawerLeft.setAttribute('aria-hidden', String(!drawerLeft.classList.contains('open')));
+    });
+    document.getElementById('toggle-right').addEventListener('click', () => {
+      drawerRight.classList.toggle('open'); drawerRight.classList.toggle('right');
+      drawerRight.setAttribute('aria-hidden', String(!drawerRight.classList.contains('open')));
+    });
+  </script>
+</body>
+</html>
