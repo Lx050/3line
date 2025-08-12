@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>三栏横屏原型 · 世界-对话-插话</title>
+  <style>
+    :root {
+      --left-bg: rgba(40, 70, 90, 0.25);
+      --mid-bg: #1f1f23;
+      --right-bg: rgba(160, 90, 20, 0.18);
+      --card-bg: rgba(255,255,255,0.06);
+      --text-primary: #eee;
+      --text-secondary: #bfc7d5;
+      --accent-warm: #ffb54a;
+      --accent-cool: #6ec1c1;
+      --danger: #ff5566;
+      --ok: #4dc276;
+      --shadow: 0 6px 16px rgba(0,0,0,0.25);
+      --radius: 12px;
+      --fast: 0.2s;
+      --normal: 0.4s;
+      --branch: 0.5s;
+    }
+    html, body { height: 100%; background: #0f1115; color: var(--text-primary); margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    #rotate-overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); z-index: 1000; font-size: 20px; text-align: center; padding: 24px; }
+
+    .app { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 12px; height: 100%; padding: 12px 16px; box-sizing: border-box; }
+    .panel { border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+
+    /* 左栏 */
+    #world-panel { background: linear-gradient(180deg, var(--left-bg), transparent 65%), radial-gradient(1200px 600px at 0% 0%, rgba(80,120,140,0.25), transparent 60%); }
+    #world-events { padding: 12px; overflow: auto; }
+    .event-card { background: var(--card-bg); border: 1px solid rgba(160,200,220,0.18); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; animation: slideIn var(--normal) ease; }
+    .event-card.new { box-shadow: 0 0 0 2px rgba(160,200,220,0.45) inset; animation: flash var(--fast) ease-in; }
+    .event-time { font-size: 12px; color: var(--text-secondary); }
+    .event-title { font-weight: 700; margin: 6px 0 4px; }
+    .event-desc { font-size: 14px; color: #d9e2ef; opacity: 0.9; }
+
+    /* 中栏 */
+    #chat-panel { background: var(--mid-bg); position: relative; }
+    #chat-stream { padding: 56px 12px 12px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+    .msg { max-width: 76%; padding: 10px 12px; background: #2a2d33; border-radius: 12px; line-height: 1.4; }
+    .msg.npc { align-self: flex-start; border-bottom-left-radius: 4px; }
+    .msg.player { align-self: flex-end; background: #3b3f47; border-bottom-right-radius: 4px; }
+    .msg.branch { outline: 2px dashed rgba(255,181,74,0.5); animation: branch var(--branch) ease; }
+
+    #composer { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; padding: 10px; background: rgba(255,255,255,0.03); border-top: 1px solid rgba(255,255,255,0.06); }
+    #input-text { background: #24272e; color: var(--text-primary); border: 1px solid #3a3f48; border-radius: 8px; padding: 10px; }
+    #btn-send, #btn-voice-mini { background: #3a3f48; color: #fff; border: 0; border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+
+    #btn-eagle, #btn-mosquito {
+      position: absolute; bottom: 72px; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer;
+      display: grid; place-items: center; box-shadow: var(--shadow);
+    }
+    #btn-eagle { left: 12px; background: radial-gradient(circle at 30% 30%, #6ec1c1, #244b50); transition: filter var(--fast); }
+    #btn-eagle.warning { filter: drop-shadow(0 0 8px #ffb54a) saturate(1.2); }
+    #btn-eagle.hostile { filter: drop-shadow(0 0 10px #ff5566) saturate(1.4) brightness(1.2); }
+    #btn-mosquito { right: 12px; background: radial-gradient(circle at 70% 30%, #ffb54a, #7a3f18); }
+
+    #chat-pause-overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); z-index: 5; }
+    #chat-pause-overlay .wave { width: 72px; height: 16px; background: repeating-linear-gradient(90deg, #fff 0 12px, transparent 12px 16px); opacity: 0.75; animation: pulse 1s infinite ease-in-out; border-radius: 8px; }
+
+    /* HUD 干扰度与按钮 */
+    #hud { position: absolute; top: 8px; left: 12px; right: 12px; display: flex; align-items: center; gap: 12px; z-index: 6; }
+    #fate-meter { flex: 1; height: 12px; background: rgba(255,255,255,0.08); border-radius: 999px; position: relative; overflow: hidden; }
+    #fate-meter .bar { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; background: linear-gradient(90deg, #6ec1c1, #ffb54a 50%, #ff5566); transition: width var(--normal); }
+    #fate-meter .tick { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.35); opacity: 0.6; }
+    #fate-meter .tick.warn { background: rgba(255,181,74,0.8); }
+    #fate-meter .tick.danger { background: rgba(255,85,102,0.9); }
+    .hud-btn { padding: 6px 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 8px; cursor: pointer; }
+
+    /* 右栏 */
+    #interject-panel { background: linear-gradient(180deg, var(--right-bg), transparent 65%); position: relative; }
+    #interject-scroll { padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+    .interject-suggest { text-align: left; background: #3c2f24; color: #ffd59a; border: 1px solid #8a5a2d; border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+    .interject-suggest[disabled] { opacity: 0.5; cursor: not-allowed; }
+    .interject-suggest:hover:not([disabled]) { filter: brightness(1.05); }
+
+    #voice-area { margin-top: auto; padding: 12px; border-top: 1px solid rgba(255,255,255,0.06); }
+    #btn-voice { width: 100%; padding: 14px 12px; border-radius: 12px; border: 2px dashed #cc8844; background: rgba(255,181,74,0.15); color: #ffd59a; cursor: pointer; }
+    #btn-voice.recording { border-style: solid; background: rgba(255,85,102,0.15); border-color: var(--danger); }
+    #btn-voice[disabled] { opacity: 0.6; cursor: not-allowed; }
+    #hint { color: #ffd59a; opacity: 0.8; font-size: 12px; margin-top: 6px; }
+
+    .drawer-toggle { display: none; position: fixed; top: 12px; width: 40px; height: 40px; border-radius: 20px; border: 0; cursor: pointer; z-index: 20; box-shadow: var(--shadow); }
+    #toggle-left { left: 12px; background: #25404a; color: #9fd7d7; }
+    #toggle-right { right: 12px; background: #6b3a1a; color: #ffd59a; }
+    .drawer { position: fixed; top: 0; bottom: 0; width: min(86vw, 360px); background: #111; box-shadow: var(--shadow); transform: translateX(-110%); transition: transform var(--normal); z-index: 15; display: flex; flex-direction: column; }
+    .drawer.right { right: 0; left: auto; transform: translateX(110%); }
+    .drawer.open.left { transform: translateX(0); }
+    .drawer.open.right { transform: translateX(0); }
+
+    /* 模态层 */
+    .modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); z-index: 50; }
+    .modal.open { display: flex; }
+    .modal .box { width: min(92vw, 560px); max-height: 76vh; overflow: auto; background: #191b20; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; box-shadow: var(--shadow); padding: 16px; }
+    .modal h3 { margin: 0 0 8px; }
+    .evo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .evo-card { background: #262a31; border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 12px; cursor: pointer; }
+    .evo-card:hover { filter: brightness(1.05); }
+    .evo-card.selected { outline: 2px solid #ffb54a; }
+    .obj-item { background: #24272e; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+
+    /* 动画 */
+    @keyframes slideIn { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes flash { 0% { box-shadow: 0 0 0 0 rgba(160,200,220,0.8) inset; } 100% { box-shadow: 0 0 0 2px rgba(160,200,220,0.45) inset; } }
+    @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+    @keyframes branch { 0% { transform: scale(1.0); } 35% { transform: scale(1.03); } 100% { transform: scale(1.0); } }
+
+    /* 断点与适配 */
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      #world-panel, #interject-panel { display: none; }
+      #toggle-left, #toggle-right { display: block; }
+      .drawer { display: flex; }
+    }
+    @media (min-width: 900px) and (max-width: 1200px) { body { font-size: 17px; } }
+    @media (min-width: 1400px) { .app { padding: 16px 32px; gap: 16px; } }
+  </style>
+</head>
+<body>
+  <div id="rotate-overlay">本原型不支持竖屏，请旋转设备至横屏以继续体验。</div>
+  <button id="toggle-left" class="drawer-toggle" aria-label="打开世界事件">☰</button>
+  <button id="toggle-right" class="drawer-toggle" aria-label="打开插话区">✦</button>
+  <aside id="drawer-left" class="drawer left" aria-hidden="true">
+    <header style="padding:12px 12px 0; color:#9fd7d7">世界关键事件</header>
+    <div id="drawer-world" style="padding:12px; overflow:auto"></div>
+  </aside>
+  <aside id="drawer-right" class="drawer right" aria-hidden="true">
+    <header style="padding:12px 12px 0; color:#ffd59a">插话建议 & 语音</header>
+    <div id="drawer-interject" style="padding:12px; overflow:auto"></div>
+  </aside>
+  <main class="app" role="application">
+    <section id="world-panel" class="panel" aria-label="世界关键事件">
+      <div id="world-events"></div>
+    </section>
+
+    <section id="chat-panel" class="panel" aria-label="玩家对话">
+      <div id="hud">
+        <div id="fate-meter" title="干扰度">
+          <div class="bar"></div>
+          <div class="tick warn" style="left:30%"></div>
+          <div class="tick warn" style="left:60%"></div>
+          <div class="tick danger" style="left:85%"></div>
+        </div>
+        <button id="btn-objectives" class="hud-btn">目标</button>
+      </div>
+
+      <div id="chat-pause-overlay"><div class="wave" title="语音处理中…"></div></div>
+      <div id="chat-stream"></div>
+      <div id="composer">
+        <input id="input-text" placeholder="输入以跟随命运…（或右侧选择插话）" />
+        <button id="btn-voice-mini" title="短按录音">语音</button>
+        <button id="btn-send">发送</button>
+      </div>
+      <button id="btn-eagle" title="俯瞰世界局势" aria-label="老鹰">🦅</button>
+      <button id="btn-mosquito" title="微小扰动·进化" aria-label="蚊子">🦟</button>
+    </section>
+
+    <aside id="interject-panel" class="panel" aria-label="插话区">
+      <div id="interject-scroll"></div>
+      <div id="voice-area">
+        <button id="btn-voice">长按说话以暂停群聊</button>
+        <div id="hint">提示：长按期间中栏会暂停，识别结束后对世界产生细微变化</div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- 目标面板 -->
+  <div id="modal-objectives" class="modal" role="dialog" aria-modal="true" aria-label="目标">
+    <div class="box">
+      <h3>阶段目标</h3>
+      <div id="objectives-list"></div>
+      <div style="text-align:right; margin-top:8px"><button id="close-objectives" class="hud-btn">关闭</button></div>
+    </div>
+  </div>
+
+  <!-- 蚊子进化面板 -->
+  <div id="modal-evo" class="modal" role="dialog" aria-modal="true" aria-label="进化">
+    <div class="box">
+      <h3>蚊子进化</h3>
+      <div class="evo-grid">
+        <div class="evo-card" data-path="speed">
+          <div><b>速度</b>（冷却 -20%）</div>
+          <div style="opacity:.8">更频繁插话</div>
+        </div>
+        <div class="evo-card" data-path="toxin">
+          <div><b>毒性</b>（影响 +20%）</div>
+          <div style="opacity:.8">更强情绪波动</div>
+        </div>
+        <div class="evo-card" data-path="stealth">
+          <div><b>隐匿</b>（警戒阈值 +10）</div>
+          <div style="opacity:.8">更难触发老鹰敌意</div>
+        </div>
+        <div class="evo-card" data-path="swarm">
+          <div><b>群聚</b>（影响 +30%）</div>
+          <div style="opacity:.8">持续偏移更久</div>
+        </div>
+      </div>
+      <div style="text-align:right; margin-top:12px"><button id="close-evo" class="hud-btn">关闭</button></div>
+    </div>
+  </div>
+
+  <script>
+    // API base: if served via file://, assume local backend
+    const API_BASE = (location.origin === 'null' || location.protocol === 'file:') ? 'http://localhost:8000' : '';
+
+    async function fetchJSON(path, opts = {}) {
+      try {
+        const res = await fetch(`${API_BASE}${path}`, { headers: { 'Content-Type': 'application/json' }, ...opts });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) { console.warn('API fallback:', err); return null; }
+    }
+
+    function updateOrientationOverlay() {
+      const overlay = document.getElementById('rotate-overlay');
+      const isPortrait = window.matchMedia('(orientation: portrait)').matches;
+      overlay.style.display = isPortrait ? 'flex' : 'none';
+    }
+    window.addEventListener('resize', updateOrientationOverlay); updateOrientationOverlay();
+
+    const worldEventsRoot = document.getElementById('world-events');
+    const chatStream = document.getElementById('chat-stream');
+    const interjectRoot = document.getElementById('interject-scroll');
+
+    const sampleEvents = [
+      { t: '第 1 日·晨', title: '风暴远处酝酿', desc: '渔民报告外海气压异常，海鸟聚集成群。' },
+      { t: '第 1 日·午', title: '边境烽烟', desc: '巡逻队发现未知旗帜的斥候，疑似试探。' },
+      { t: '第 1 日·昏', title: '市集中诡异低鸣', desc: '有人声称听见持续的嗡嗡声。' },
+    ];
+
+    const chatHistory = [];
+
+    const state = {
+      interference: 0, // 0-100
+      evo: { path: null, power: 1.0, cd: 1.0, warnBonus: 0 },
+      cooldown: { suggestions: false, voice: false },
+      objectives: [
+        { id: 'obj-1', title: '躲开风暴眼', done: false },
+        { id: 'obj-2', title: '避免引发恐慌', done: false },
+        { id: 'obj-3', title: '观察天空的影子', done: false },
+      ],
+      tick: { timer: null, periodMs: 25000 }
+    };
+
+    function renderEvents(target) {
+      target.innerHTML = '';
+      for (const ev of sampleEvents) {
+        const card = document.createElement('div');
+        card.className = 'event-card';
+        card.innerHTML = `
+          <div class="event-time">${ev.t}</div>
+          <div class="event-title">${ev.title}</div>
+          <div class="event-desc">${ev.desc}</div>
+        `;
+        target.appendChild(card);
+      }
+    }
+
+    function pushChat(text, role = 'npc', isBranch = false) {
+      const m = document.createElement('div');
+      m.className = `msg ${role}` + (isBranch ? ' branch' : '');
+      m.textContent = text;
+      chatStream.appendChild(m);
+      chatStream.scrollTop = chatStream.scrollHeight;
+      chatHistory.push({ role: role === 'player' ? 'player' : 'npc', content: text });
+    }
+
+    function updateHUD() {
+      const pct = Math.max(0, Math.min(100, state.interference));
+      const bar = document.querySelector('#fate-meter .bar');
+      bar.style.width = pct + '%';
+      // Eagle reaction visuals
+      const eagle = document.getElementById('btn-eagle');
+      eagle.classList.toggle('warning', pct >= (30 + state.evo.warnBonus));
+      eagle.classList.toggle('hostile', pct >= (85 + state.evo.warnBonus));
+    }
+
+    function applyInterference(source, base = 1) {
+      // multipliers
+      const power = state.evo.power || 1.0;
+      const delta = Math.round(base * power * 10) / 10; // one decimal
+      state.interference = Math.max(0, Math.min(100, state.interference + delta));
+      updateHUD();
+      maybeEagleReact();
+      maybeObjectiveProgress();
+    }
+
+    function maybeEagleReact() {
+      const warn1 = 30 + state.evo.warnBonus;
+      const warn2 = 60 + state.evo.warnBonus;
+      const danger = 85 + state.evo.warnBonus;
+      const val = state.interference;
+      if (val >= danger) {
+        // Counter event
+        injectWorldEvent({ t: '此刻', title: '高空的注视', desc: '一阵寒意掠过，群体情绪被压制。' }, true);
+      } else if (val >= warn2) {
+        // Strong hint
+        toast('天空中传来低鸣，像是在警告。');
+      } else if (val >= warn1) {
+        // Mild hint
+        toast('影子似乎更近了一点。');
+      }
+    }
+
+    function toast(msg) {
+      const el = document.createElement('div');
+      el.textContent = msg;
+      el.style.position = 'fixed'; el.style.left = '50%'; el.style.top = '12px'; el.style.transform = 'translateX(-50%)';
+      el.style.background = 'rgba(0,0,0,0.7)'; el.style.border = '1px solid rgba(255,255,255,0.2)';
+      el.style.padding = '8px 12px'; el.style.borderRadius = '8px'; el.style.zIndex = 100; el.style.fontSize = '14px';
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 1800);
+    }
+
+    function injectWorldEvent(ev, highlight = false) {
+      sampleEvents.unshift(ev);
+      const card = document.createElement('div');
+      card.className = 'event-card' + (highlight ? ' new' : '');
+      card.innerHTML = `<div class="event-time">${ev.t}</div><div class="event-title">${ev.title}</div><div class="event-desc">${ev.desc}</div>`;
+      worldEventsRoot.prepend(card);
+      syncDrawers();
+    }
+
+    async function loadAISuggestions() {
+      // cooldown gating for suggestions button states
+      const payload = { chat: chatHistory.slice(-10), world_events: sampleEvents.slice(0, 6), n: 4 };
+      const data = await fetchJSON('/api/suggestions', { method: 'POST', body: JSON.stringify(payload) });
+      const suggestions = data?.suggestions || [
+        '也许我们低估了天空的影子…', '等等，先别说话，听——你听见了吗？', '向东转移队伍，躲开风暴眼。', '把消息压下去，免得引起恐慌。'
+      ];
+      renderAISuggestions(interjectRoot, suggestions);
+      syncDrawers();
+    }
+
+    function renderAISuggestions(target, list) {
+      target.innerHTML = '';
+      list.forEach((line) => {
+        const b = document.createElement('button');
+        b.className = 'interject-suggest';
+        b.textContent = line;
+        b.addEventListener('click', async () => {
+          if (state.cooldown.suggestions) { toast('插话冷却中…'); return; }
+          // Apply interference before/after reply
+          applyInterference('suggestion', 1);
+          pushChat(line, 'player', true);
+          const payload = { chat: chatHistory.slice(-10), world_events: sampleEvents.slice(0, 6), player_message: line };
+          const data = await fetchJSON('/api/chat', { method: 'POST', body: JSON.stringify(payload) });
+          const reply = data?.reply || '……命运的齿轮继续转动。';
+          pushChat(reply, 'npc', false);
+          startSuggestionCooldown();
+          // refresh suggestion after reply
+          loadAISuggestions();
+        });
+        if (state.cooldown.suggestions) b.setAttribute('disabled','true');
+        target.appendChild(b);
+      });
+    }
+
+    function setButtonsDisabled(root, disabled) {
+      root.querySelectorAll('button.interject-suggest').forEach(btn => {
+        if (disabled) btn.setAttribute('disabled', 'true'); else btn.removeAttribute('disabled');
+      });
+    }
+
+    function startSuggestionCooldown() {
+      const baseMs = 3000; // 3s
+      const ms = Math.max(800, Math.round(baseMs * (state.evo.cd || 1.0)));
+      state.cooldown.suggestions = true;
+      setButtonsDisabled(interjectRoot, true);
+      setTimeout(() => { state.cooldown.suggestions = false; setButtonsDisabled(interjectRoot, false); }, ms);
+    }
+
+    function startVoiceCooldown(btn) {
+      const baseMs = 6000; // 6s
+      const ms = Math.max(1200, Math.round(baseMs * (state.evo.cd || 1.0)));
+      btn.setAttribute('disabled', 'true');
+      state.cooldown.voice = true;
+      setTimeout(() => { btn.removeAttribute('disabled'); state.cooldown.voice = false; }, ms);
+    }
+
+    function syncDrawers() {
+      const drawerWorld = document.getElementById('drawer-world');
+      const drawerInterject = document.getElementById('drawer-interject');
+      drawerWorld.innerHTML = worldEventsRoot.innerHTML;
+      drawerInterject.innerHTML = interjectRoot.innerHTML + document.getElementById('voice-area').outerHTML;
+    }
+
+    // 初始渲染与对话
+    renderEvents(worldEventsRoot);
+    pushChat('【系统】世界尽收眼底。');
+    pushChat('你迟到了。风暴不会等人。', 'npc');
+    loadAISuggestions();
+    updateHUD();
+
+    // 文本发送
+    const input = document.getElementById('input-text');
+    document.getElementById('btn-send').addEventListener('click', async () => {
+      const v = input.value.trim(); if (!v) return; input.value = '';
+      pushChat(v, 'player');
+      applyInterference('text', 0.5);
+      const payload = { chat: chatHistory.slice(-10), world_events: sampleEvents.slice(0, 6), player_message: v };
+      const data = await fetchJSON('/api/chat', { method: 'POST', body: JSON.stringify(payload) });
+      const reply = data?.reply || '明白。但风暴仍在推进。';
+      pushChat(reply, 'npc');
+      loadAISuggestions();
+    });
+
+    // 语音（右下按钮·长按）
+    const btnVoice = document.getElementById('btn-voice');
+    const pauseOverlay = document.getElementById('chat-pause-overlay');
+    function startRecording() { if (state.cooldown.voice) { toast('语音冷却中…'); return; } btnVoice.classList.add('recording'); pauseOverlay.style.display = 'flex'; }
+    async function stopRecording() {
+      if (!btnVoice.classList.contains('recording')) return;
+      btnVoice.classList.remove('recording');
+      pauseOverlay.style.display = 'none';
+      const transcript = '（你的低语在风中扩散……）';
+      pushChat(transcript, 'player', true);
+      applyInterference('voice', 2);
+      const payload = { transcript, chat: chatHistory.slice(-10), world_events: sampleEvents.slice(0, 6) };
+      const data = await fetchJSON('/api/voice', { method: 'POST', body: JSON.stringify(payload) });
+      const ev = data?.world_event || { t: '此刻', title: '诡响回荡', desc: '据说嗡鸣汇成回声墙，短暂停滞了争吵。' };
+      injectWorldEvent(ev, true);
+      startVoiceCooldown(btnVoice);
+      loadAISuggestions();
+    }
+    btnVoice.addEventListener('mousedown', startRecording);
+    btnVoice.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+    ['mouseup','mouseleave','touchend','touchcancel'].forEach(evt => btnVoice.addEventListener(evt, stopRecording));
+    document.getElementById('btn-voice-mini').addEventListener('click', () => { pushChat('（短语音）先暂停一下。', 'player', true); applyInterference('voice-mini', 0.8); });
+
+    // 老鹰按钮
+    document.getElementById('btn-eagle').addEventListener('click', () => {
+      alert('老鹰：俯瞰世界局势\n\n势力范围：北境↑，边境紧张度：中→高\n（干扰度高时，可能触发反制事件）');
+    });
+
+    // 蚊子按钮 → 打开进化面板
+    const modalEvo = document.getElementById('modal-evo');
+    document.getElementById('btn-mosquito').addEventListener('click', () => { modalEvo.classList.add('open'); });
+    document.getElementById('close-evo').addEventListener('click', () => { modalEvo.classList.remove('open'); });
+    modalEvo.querySelectorAll('.evo-card').forEach(card => {
+      card.addEventListener('click', () => {
+        modalEvo.querySelectorAll('.evo-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        const path = card.getAttribute('data-path');
+        state.evo.path = path;
+        // reset
+        state.evo.power = 1.0; state.evo.cd = 1.0; state.evo.warnBonus = 0;
+        if (path === 'speed') state.evo.cd = 0.8;
+        if (path === 'toxin') state.evo.power = 1.2;
+        if (path === 'stealth') state.evo.warnBonus = 10;
+        if (path === 'swarm') state.evo.power = 1.3;
+        toast('进化已应用');
+      });
+    });
+
+    // 目标面板
+    const modalObj = document.getElementById('modal-objectives');
+    const listObj = document.getElementById('objectives-list');
+    function renderObjectives() {
+      listObj.innerHTML = '';
+      state.objectives.forEach(o => {
+        const div = document.createElement('div');
+        div.className = 'obj-item';
+        div.innerHTML = `<b>${o.title}</b><div style="opacity:.75; font-size:13px;">${o.done ? '已完成' : '进行中'}</div>`;
+        listObj.appendChild(div);
+      });
+    }
+    function maybeObjectiveProgress() {
+      // 简单示例：当干扰度 < 40 时“避免引发恐慌”更易完成；>60 时“观察影子”完成
+      const v = state.interference;
+      const o2 = state.objectives.find(o => o.id === 'obj-2');
+      const o3 = state.objectives.find(o => o.id === 'obj-3');
+      if (v < 40 && o2 && !o2.done) { o2.done = true; toast('目标完成：避免引发恐慌'); renderObjectives(); }
+      if (v > 60 && o3 && !o3.done) { o3.done = true; toast('目标完成：观察天空的影子'); renderObjectives(); }
+    }
+    document.getElementById('btn-objectives').addEventListener('click', () => { renderObjectives(); modalObj.classList.add('open'); });
+    document.getElementById('close-objectives').addEventListener('click', () => { modalObj.classList.remove('open'); });
+
+    // 定时世界事件（命运自流）
+    function startTicker() {
+      if (state.tick.timer) clearInterval(state.tick.timer);
+      state.tick.timer = setInterval(() => {
+        // 若处于语音暂停，延后
+        if (document.getElementById('chat-pause-overlay').style.display === 'flex') return;
+        const high = state.interference >= (60 + state.evo.warnBonus);
+        const ev = high ?
+          { t: '流光', title: '阴影压境', desc: '天色忽暗，远处鸟群盘旋不散。' } :
+          { t: '流光', title: '风向微转', desc: '有人说空气压得耳膜发紧。' };
+        injectWorldEvent(ev, false);
+        // 小幅自然回调干扰度
+        state.interference = Math.max(0, state.interference - (high ? 1 : 2));
+        updateHUD();
+      }, state.tick.periodMs);
+    }
+    startTicker();
+
+    // 手机横屏：抽屉开关
+    const drawerLeft = document.getElementById('drawer-left');
+    const drawerRight = document.getElementById('drawer-right');
+    document.getElementById('toggle-left').addEventListener('click', () => { drawerLeft.classList.toggle('open'); drawerLeft.classList.toggle('left'); drawerLeft.setAttribute('aria-hidden', String(!drawerLeft.classList.contains('open'))); });
+    document.getElementById('toggle-right').addEventListener('click', () => { drawerRight.classList.toggle('open'); drawerRight.classList.toggle('right'); drawerRight.setAttribute('aria-hidden', String(!drawerRight.classList.contains('open'))); });
+  </script>
+</body>
+</html>
